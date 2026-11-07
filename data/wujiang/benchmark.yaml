@@ -1,0 +1,19 @@
+horizons:
+- 3
+- 6
+- 14
+splits:
+  train_observations:
+  - 1951-05
+  - 2010-12
+  validation_targets:
+  - 2011-01
+  - 2015-12
+  final_fit_observations:
+  - 1951-05
+  - 2015-12
+  test_targets:
+  - 2016-01
+  - 2023-04
+  incomplete_horizon_policy: exclude_origin
+  invariant: every supervised training target must be at or before the fit cutoff

@@ -1,0 +1,18 @@
+task: data/wujiang
+horizon: 3
+python: /kling_test/gen4/tangjiafu/miniconda3/envs/huawei/bin/python
+rounds: 3
+workers: 3
+worker_timeout: 480
+worker_finish_timeout: 600
+search_timeout: 3600
+candidate_timeout: 300
+cpus_per_worker: 12
+native_threads: 1
+api:
+  base_url: null
+  model: null
+  reasoning_effort: null
+  max_tokens: 16384
+  context_window: 262144
+  api_timeout: 300

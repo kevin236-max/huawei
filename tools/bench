@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Submit a method file to this workspace's evaluator."""
+import argparse
+import json
+import socket
+
+parser=argparse.ArgumentParser()
+parser.add_argument('action',choices=['evaluate'])
+parser.add_argument('--candidate',required=True)
+args=parser.parse_args()
+with socket.socket(socket.AF_UNIX) as connection:
+    connection.settimeout(490)
+    connection.connect('/control/evaluation.sock')
+    connection.sendall((json.dumps({'candidate':args.candidate})+'\n').encode())
+    with connection.makefile('rb') as stream:
+        result=json.loads(stream.readline())
+print(json.dumps(result,ensure_ascii=False))
+raise SystemExit(1 if 'error' in result else 0)
