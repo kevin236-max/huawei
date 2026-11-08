@@ -4,7 +4,7 @@ python: /kling_test/gen4/tangjiafu/miniconda3/envs/huawei/bin/python
 rounds: 3
 workers: 3
 worker_timeout: 480
-worker_finish_timeout: 600
+worker_finish_timeout: 180
 search_timeout: 3600
 candidate_timeout: 300
 cpus_per_worker: 12

@@ -10,7 +10,7 @@ import threading
 import time
 
 from harness import sandbox
-from harness.forecasting import windows, score
+from harness.forecasting import INTERNAL_VALIDATION_MONTHS, windows, score
 
 
 def read_candidate(source):
@@ -36,6 +36,22 @@ def read_candidate(source):
 
 def copy_candidate(source, destination):
     Path(destination).write_bytes(read_candidate(source))
+
+
+def split_data(task, split):
+    """Return (fit rows, rolling source rows, target bounds) for one scoring split.
+
+    ``internal`` mirrors analysis.calculate_internal_validation_score on the public table.
+    """
+    if split == 'internal':
+        data = task['train']
+        months = INTERNAL_VALIDATION_MONTHS
+        start, end = data.month.iloc[-months], data.month.iloc[-1]
+        return data.iloc[:-months], data, (start, end)
+    splits = task['splits']
+    fit_end = splits['train_observations' if split == 'validation' else 'final_fit_observations'][1]
+    history = task['history']
+    return history.loc[history.month <= fit_end], history, splits[split+'_targets']
 
 
 def evaluate(config, task, candidate, destination, cpus, deadline, split='validation', params=None):
@@ -85,16 +101,14 @@ def evaluate(config, task, candidate, destination, cpus, deadline, split='valida
                     line,_,rest=buffer.partition(b'\n'); buffer[:]=rest
                     return json.loads(line)
         try:
-            splits=task['splits']
-            fit_end=splits['train_observations' if split=='validation' else 'final_fit_observations'][1]
-            train=task['history'].loc[task['history'].month<=fit_end]
+            train, source, bounds = split_data(task, split)
             meta=exchange(dict(train=train.to_dict('records'),horizon=task['horizon'],params=None if params is None else [params]))
             parameters=meta['candidates']
             if not parameters or not all(isinstance(p,dict) for p in parameters):
                 raise ValueError('候选参数列表无效')
             if params is not None and parameters!=[params]: raise ValueError('候选未使用选定参数')
             predictions=[]; truths=[]
-            for history,targets,truth in windows(task['history'],*splits[split+'_targets'],task['horizon']):
+            for history,targets,truth in windows(source,*bounds,task['horizon']):
                 response=exchange(dict(history=history.to_dict('records'),targets=targets))
                 values=response['predictions']
                 if len(values)!=len(parameters): raise ValueError('预测方案数量不一致')
@@ -124,30 +138,63 @@ def start_server(config, task, worker, cpus, deadline):
         def handle(self):
             self.request.settimeout(5)
             try:
-                request=json.loads(self.rfile.readline(65536))
-                from harness.run import within
-                relative=Path(request['candidate'])
-                if relative.is_absolute(): relative=relative.relative_to('/workspace')
-                source=within(worker/'submissions',Path(*relative.parts[1:])) if relative.parts[0]=='submissions' else within(workspace,relative)
-                if source.suffix!='.py': raise ValueError('请提交 Python 候选文件')
-                if time.monotonic()>=deadline: raise TimeoutError('本次任务已结束')
-                folder=evaluations/str(len(list(evaluations.iterdir()))+1)
-                result=evaluate(config,task,source,folder,cpus,
-                                min(deadline,time.monotonic()+config['candidate_timeout']))
-                target=visible/folder.name
-                target.mkdir()
-                shutil.copyfile(folder/result['file'],target/result['file'])
-                result={**result,'file':str(Path('submissions')/folder.name/result['file'])}
-                (target/'result.json').write_text(json.dumps(result,ensure_ascii=False))
-                # New host-written files must remain readable to the live sandbox UID.
-                target.chmod(0o755)
-                for path in target.iterdir(): path.chmod(0o644)
+                result=self.submit()
             except Exception as error:
-                result={'error': '验证执行失败或超时；请使用公开内部验证检查候选'}
-                with (worker/'evaluation_error.log').open('a') as log:
-                    log.write(f'{type(error).__name__}: {error}\n')
+                result={'error': '验证执行失败；请使用公开内部验证检查候选'}
+                self.log(error)
             try: self.wfile.write((json.dumps(result,ensure_ascii=False)+'\n').encode())
             except OSError: pass
+
+        def submit(self):
+            from harness.run import within
+            request=json.loads(self.rfile.readline(65536))
+            name=str(request['candidate'])
+            # Request problems carry no private information, so report them plainly.
+            try:
+                relative=Path(name)
+                if relative.is_absolute(): relative=relative.relative_to('/workspace')
+                source=within(worker/'submissions',Path(*relative.parts[1:])) if relative.parts[0]=='submissions' else within(workspace,relative)
+            except (ValueError,IndexError):
+                return {'error': f'候选文件须位于 /workspace 内：{name}'}
+            if source.suffix!='.py': return {'error': f'请提交 Python 候选文件：{name}'}
+            if not source.is_file(): return {'error': f'找不到候选文件：{name}'}
+            if time.monotonic()>=deadline: return {'error': '本次任务已结束'}
+            folder=evaluations/str(len(list(evaluations.iterdir()))+1)
+            try:
+                result=evaluate(config,task,source,folder,cpus,
+                                min(deadline,time.monotonic()+config['candidate_timeout']))
+            except TimeoutError as error:
+                self.log(error)
+                return {'error': '外部验证执行超时；可以先用内部验证检查运行耗时'}
+            except (ValueError,RuntimeError) as error:
+                # Host-side contract messages (shape, finiteness, parameter count) are generic.
+                self.log(error)
+                return {'error': f'外部验证未完成：{error}'}
+            result['internal_score']=self.internal(folder/result['file'],folder,result['best_params'])
+            (folder/'result.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+            target=visible/folder.name
+            target.mkdir()
+            shutil.copyfile(folder/result['file'],target/result['file'])
+            result={**result,'file':str(Path('submissions')/folder.name/result['file'])}
+            (target/'result.json').write_text(json.dumps(result,ensure_ascii=False))
+            # New host-written files must remain readable to the live sandbox UID.
+            target.chmod(0o755)
+            for path in target.iterdir(): path.chmod(0o644)
+            return result
+
+        def internal(self, saved, folder, params):
+            """Host-computed internal score of the reported parameters; never fatal."""
+            try:
+                return evaluate(config,task,saved,folder/'internal',cpus,
+                                min(deadline,time.monotonic()+config['candidate_timeout']),
+                                split='internal',params=params)['score']
+            except Exception as error:
+                self.log(RuntimeError(f'internal score: {type(error).__name__}: {error}'))
+                return None
+
+        def log(self, error):
+            with (worker/'evaluation_error.log').open('a') as log:
+                log.write(f'{type(error).__name__}: {error}\n')
 
     fd=os.open(control,os.O_RDONLY | os.O_DIRECTORY)
     try:

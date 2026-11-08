@@ -8,8 +8,25 @@ import time
 from harness import gateway, sandbox
 
 
-def final_json(text):
-    """Read the last complete JSON object, including fenced/prose-wrapped output."""
+def json_problem(text):
+    """Short hint for the outermost JSON-looking span, used in retry messages."""
+    start, end = text.find('{'), text.rfind('}')
+    if start < 0 or end < start:
+        return '回复中没有 JSON 对象'
+    try:
+        json.loads(text[start:end+1])
+    except ValueError as error:
+        detail = getattr(error, 'msg', str(error))
+        return f'JSON 格式有误（{detail}），可能是括号或引号不完整'
+    return 'JSON 中缺少约定的字段'
+
+
+def final_json(text, keys=None):
+    """Read the last complete JSON object, including fenced/prose-wrapped output.
+
+    With ``keys``, only top-level dicts containing one of them qualify, so a nested
+    object left over from a truncated outer object is not mistaken for the answer.
+    """
     decoder = json.JSONDecoder()
     objects = []
     position = 0
@@ -24,9 +41,23 @@ def final_json(text):
             continue
         objects.append(value)
         position = end
+    if keys is not None:
+        objects = [value for value in objects if isinstance(value, dict) and any(key in value for key in keys)]
     if not objects:
-        raise ValueError('No JSON object in final assistant text')
+        raise ValueError(json_problem(text))
     return objects[-1]
+
+
+def needs_continuation(result):
+    """A settled turn with no answer text, e.g. the output limit was spent on thinking."""
+    if result['status'] != 'finished' or result['text'].strip():
+        return None
+    assistant = [m for m in result['messages'] if isinstance(m, dict) and m.get('role') == 'assistant']
+    if not assistant:
+        return None
+    if assistant[-1].get('stopReason') == 'length':
+        return '上一条回复达到了单次输出的长度上限，还没有形成结果。请接着当前进展继续。'
+    return '上一条回复没有包含结果。请接着当前进展继续，完成后按约定格式给出结果。'
 
 
 def model_config(api):
@@ -43,6 +74,15 @@ def model_config(api):
                              'requiresReasoningContentOnAssistantMessages':'deepseek' in model.lower()}}]}}}
 
 
+# One-line role descriptions; task rules and data stay in the user prompts.
+SYSTEM_PROMPTS = {
+    'main': '你负责规划月度径流预测的方法搜索：分批向并行的 subagent 下达实验任务，根据返回结果安排后续实验，'
+            '最后选出最终候选；你只读文件、不写代码，每次回复以一个 JSON 对象结束。',
+    'subagent': '你负责按给定的实验指令，在 /workspace 中实现单文件 Python 月度径流预测候选：用内部验证调试和比较参数，'
+                '用 bench 完成外部验证，按指令执行完调参步骤后，用一个 JSON 对象报告最佳已评估结果。',
+}
+
+
 class PiSession:
     """One Pi process across sequential prompts; never restart a lost context."""
 
@@ -51,6 +91,7 @@ class PiSession:
         self.public, self.cpus, self.deadline, self.role = public, cpus, deadline, role
         self.process = self.identity = self.server = None
         self.closed = False
+        self.finish_sent = False
         self.buffer = bytearray()
 
     def __enter__(self):
@@ -72,13 +113,25 @@ class PiSession:
                    'read,ls' if self.role == 'main' else 'read,bash,edit,write',
                    '--no-extensions', '--no-mcp', '--no-skills', '--no-prompt-templates',
                    '--no-context-files', '--no-approve', '--thinking', api.get('reasoning_effort') or 'off',
-                   '--system-prompt', 'Follow the task instructions and return a concise final result.']
+                   '--system-prompt', SYSTEM_PROMPTS['main' if self.role == 'main' else 'subagent']]
         self.server = gateway.start_gateway(self.stage / 'control/api.sock', api, self.deadline)
         self.process, self.identity = sandbox.start(
             self.config, self.stage, self.public, self.cpus, 'main' if self.role == 'main' else 'agent',
             command, self.stage / 'control', deadline=self.deadline)
 
-    def prompt(self, prompt, *, soft_deadline=None, finish_prompt=None):
+    def prompt(self, prompt, *, soft_deadline=None, finish_prompt=None, continuations=1):
+        """Send one prompt; if the turn settles without answer text, nudge it to continue."""
+        result = self._send(prompt, soft_deadline, finish_prompt)
+        for _ in range(continuations):
+            message = needs_continuation(result)
+            if message is None:
+                break
+            later = self._send(message, soft_deadline, finish_prompt)
+            later['messages'] = result['messages'] + later['messages']
+            result = later
+        return result
+
+    def _send(self, prompt, soft_deadline, finish_prompt):
         if self.closed:
             return {'text': '', 'status': 'failed', 'messages': []}
         self.stage.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -92,9 +145,11 @@ class PiSession:
             else:
                 if self.process is None:
                     self._start()
+                # The wrap-up steer is sent at most once per session, across follow-up prompts.
                 result = consume_rpc(self.process, prompt, self.deadline, self.stage / 'trajectory.jsonl',
-                                     self.stage / 'stderr.log', buffer=self.buffer,
-                                     soft_deadline=soft_deadline, finish_prompt=finish_prompt)
+                                     self.stage / 'stderr.log', buffer=self.buffer, soft_deadline=soft_deadline,
+                                     finish_prompt=None if self.finish_sent else finish_prompt)
+                self.finish_sent = self.finish_sent or result.get('finish_sent', False)
         except Exception as error:
             with (self.stage / 'stderr.log').open('a') as stream:
                 stream.write(f'Runtime error: {type(error).__name__}: {error}\n')
@@ -116,10 +171,21 @@ class PiSession:
 
 
 def run_session(config, stage, public, cpus, prompt, deadline, role='subagent', *,
-                soft_deadline=None, finish_prompt=None):
-    """Run one independent worker session, closing it after its response."""
+                soft_deadline=None, finish_prompt=None, check=None):
+    """Run one independent worker session, closing it after its response.
+
+    ``check(text)`` may return a short follow-up (e.g. the report JSON did not parse);
+    it is sent once in the same session. A failed follow-up keeps the earlier answer.
+    """
     with PiSession(config, stage, public, cpus, deadline, role) as session:
-        return session.prompt(prompt, soft_deadline=soft_deadline, finish_prompt=finish_prompt)
+        result = session.prompt(prompt, soft_deadline=soft_deadline, finish_prompt=finish_prompt)
+        message = check(result['text']) if check and result['status'] == 'finished' else None
+        if message:
+            later = session.prompt(message, soft_deadline=soft_deadline, finish_prompt=finish_prompt)
+            if later['status'] == 'finished' and later['text'].strip():
+                later['messages'] = result['messages'] + later['messages']
+                result = later
+        return result
 
 
 def consume_rpc(process, prompt, deadline, trajectory, stderr_path, *, buffer=None,
@@ -229,4 +295,4 @@ def consume_rpc(process, prompt, deadline, trajectory, stderr_path, *, buffer=No
                     break
         finally:
             selector.close()
-    return {'text':final_text, 'status':status, 'messages':messages}
+    return {'text':final_text, 'status':status, 'messages':messages, 'finish_sent':finish_sent}

@@ -116,6 +116,69 @@ for line in sys.stdin:
         with self.assertRaises(ValueError):
             pi.final_json('no JSON')
 
+    def test_final_json_keys_ignore_inner_object_of_truncated_plan(self):
+        # The outer closing brace is missing; the last parseable dict is only one task.
+        text = '{"tasks":[{"name":"a","instruction":"x","files":[]},{"name":"b","instruction":"y","files":[]}]'
+        with self.assertRaisesRegex(ValueError, '括号'):
+            pi.final_json(text, ('tasks', 'file'))
+        self.assertEqual(pi.final_json(text + '}', ('tasks', 'file'))['tasks'][1]['name'], 'b')
+
+    def test_settled_turn_without_answer_gets_one_continuation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary) / 'worker'
+            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            child = subprocess.Popen([sys.executable, '-u', '-c', '''
+import json, sys
+for turn, line in enumerate(sys.stdin, 1):
+    content = [{'type': 'thinking', 'thinking': 'long'}] if turn == 1 else [{'type': 'text', 'text': '{"file": null}'}]
+    print(json.dumps({'type': 'message_end', 'message': {'role': 'assistant', 'content': content,
+        'stopReason': 'length' if turn == 1 else 'stop'}}), flush=True)
+    print(json.dumps({'type': 'agent_settled'}), flush=True)
+'''], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+            class Gateway:
+                def stop(self): pass
+            def stop(process, identity):
+                process.kill(); process.wait()
+                for stream in (process.stdin, process.stdout, process.stderr): stream.close()
+            with patch.object(gateway, 'start_gateway', return_value=Gateway()), \
+                 patch.object(sandbox, 'start', return_value=(child, object())), \
+                 patch.object(sandbox, 'stop', side_effect=stop):
+                result = pi.run_session(config, stage, Path(temporary), [0], 'task', time.monotonic()+5)
+            self.assertEqual(result['text'], '{"file": null}')
+            self.assertEqual(len(result['messages']), 2)
+            prompts = [json.loads(line)['message'] for line in (stage / 'prompts.jsonl').read_text().splitlines()]
+            self.assertEqual(len(prompts), 2)
+            self.assertIn('长度上限', prompts[1])
+
+    def test_unparsed_report_is_resent_once_in_same_session(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            stage = Path(temporary) / 'worker'
+            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            child = subprocess.Popen([sys.executable, '-u', '-c', '''
+import json, sys
+for turn, line in enumerate(sys.stdin, 1):
+    text = '{"file": "a.py", "summary": "x"' if turn == 1 else '{"file": "a.py", "summary": "x"}'
+    print(json.dumps({'type': 'message_end', 'message': {'role': 'assistant',
+        'content': [{'type': 'text', 'text': text}], 'stopReason': 'stop'}}), flush=True)
+    print(json.dumps({'type': 'agent_settled'}), flush=True)
+'''], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+            class Gateway:
+                def stop(self): pass
+            def stop(process, identity):
+                process.kill(); process.wait()
+                for stream in (process.stdin, process.stdout, process.stderr): stream.close()
+            def check(text):
+                try:
+                    pi.final_json(text, ('file', 'summary'))
+                except ValueError as error:
+                    return f'重新输出：{error}'
+            with patch.object(gateway, 'start_gateway', return_value=Gateway()), \
+                 patch.object(sandbox, 'start', return_value=(child, object())), \
+                 patch.object(sandbox, 'stop', side_effect=stop):
+                result = pi.run_session(config, stage, Path(temporary), [0], 'task', time.monotonic()+5, check=check)
+            self.assertEqual(pi.final_json(result['text']), {'file': 'a.py', 'summary': 'x'})
+            self.assertEqual(len((stage / 'prompts.jsonl').read_text().splitlines()), 2)
+
     def rpc(self, code, prompt='hello', duration=2, soft_after=None):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -293,7 +356,9 @@ time.sleep(10)
                 self.assertIn((str(dist), '/opt/pi/packages/coding-agent/dist'), mounts)
                 self.assertNotIn((str(pi_root), '/opt/pi'), mounts)
                 self.assertNotIn('/opt/tools', arguments)
+                self.assertNotIn('/workspace/analysis.py', arguments)
                 self.assertEqual(arguments[arguments.index('OMP_NUM_THREADS')+1], '1')
+                self.assertEqual(arguments[arguments.index('PYTHONSAFEPATH')+1], '1')
                 self.assertIn(','.join(map(str, available[:2])), arguments)
                 config['native_threads'] = 1000
                 sandbox.start(config, root/'worker', public, available[-2:], 'agent', ['node','cli'], root/'control')
@@ -301,6 +366,9 @@ time.sleep(10)
                 self.assertIn('/opt/tools', arguments)
                 self.assertIn((str(root/'worker/submissions'), '/workspace/submissions'),
                               [(arguments[i+1], arguments[i+2]) for i, option in enumerate(arguments) if option == '--ro-bind'])
+                worker_mounts=[(arguments[i+1], arguments[i+2]) for i, option in enumerate(arguments) if option == '--ro-bind']
+                self.assertIn((str(sandbox.ROOT/'harness/analysis.py'), '/workspace/analysis.py'), worker_mounts)
+                self.assertNotIn('/opt/analysis.py', arguments)
                 self.assertEqual(arguments[arguments.index('OMP_NUM_THREADS')+1], str(len(available[-2:])))
                 self.assertIn(','.join(map(str, available[-2:])), arguments)
 
@@ -404,6 +472,7 @@ time.sleep(10)
             self.assertEqual(args[4], 'main')
             tools = args[5][args[5].index('--tools')+1]
             self.assertEqual(tools, 'read,ls')
+            self.assertEqual(args[5][args[5].index('--system-prompt')+1], pi.SYSTEM_PROMPTS['main'])
 
 
 class GatewayWithoutSocketsTests(unittest.TestCase):

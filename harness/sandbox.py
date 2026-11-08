@@ -62,7 +62,6 @@ def start(config, stage, public, cpus, mode, command, control=None, *, deadline=
     args += ['--ro-bind', '/proc', '/proc', '--dev', '/dev', '--tmpfs', '/dev/shm',
              '--ro-bind', str(ROOT / 'harness/seccomp.py'), '/opt/entry.py',
              '--ro-bind', str(ROOT / 'harness/forecasting.py'), '/opt/forecasting.py',
-             '--ro-bind', str(ROOT / 'harness/analysis.py'), '/opt/analysis.py',
              '--ro-bind' if mode == 'main' else '--bind', str(stage / 'workspace'), '/workspace',
              '--ro-bind', str(public), '/workspace/input',
              '--bind', str(stage / 'home'), '/home/agent', '--bind', str(stage / 'tmp'), '/tmp']
@@ -71,6 +70,8 @@ def start(config, stage, public, cpus, mode, command, control=None, *, deadline=
            'MPLCONFIGDIR':'/tmp/matplotlib', 'LANG':'C.UTF-8', 'TZ':'UTC',
            'PATH':str(Path(python).parent)+':/usr/bin:/bin', 'PYTHONPATH':'/opt:/workspace',
            'PYTHONDONTWRITEBYTECODE':'1', 'PYTHONNOUSERSITE':'1', 'PIP_NO_INDEX':'1',
+           # Keep cwd/script dirs off sys.path; imports resolve only through PYTHONPATH.
+           'PYTHONSAFEPATH':'1',
            'OMP_NUM_THREADS':threads, 'OPENBLAS_NUM_THREADS':threads, 'MKL_NUM_THREADS':threads}
     if mode in ('agent', 'main'):
         if control is None:
@@ -91,7 +92,10 @@ def start(config, stage, public, cpus, mode, command, control=None, *, deadline=
             if submissions.is_symlink():
                 raise ValueError('Submission export root cannot be a symlink')
             submissions.mkdir(mode=0o755, exist_ok=True)
+            # The public internal check sits next to input/ and solution/, read-only, so it
+            # is visible to ls and a same-named workspace file cannot replace it.
             args += ['--ro-bind', str(submissions), '/workspace/submissions',
+                     '--ro-bind', str(ROOT / 'harness/analysis.py'), '/workspace/analysis.py',
                      '--ro-bind', str(ROOT / 'tools'), '/opt/tools']
             env['PATH'] = '/opt/tools:' + env['PATH']
         env['PI_CODING_AGENT_DIR'] = '/home/agent/.pi'

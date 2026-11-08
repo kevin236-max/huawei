@@ -255,8 +255,11 @@ class ForecastingTests(unittest.TestCase):
             os.chdir(workspace)
             self.addCleanup(os.chdir, previous)
             result = analysis.calculate_internal_validation_score(candidate)
-            self.assertEqual(result["results"], [
-                {"params": {"scale": 1}, "score": 1.0}, {"params": {"scale": 2}, "score": 0.0}])
+            self.assertEqual([(r["params"], r["score"]) for r in result["results"]],
+                             [({"scale": 1}, 1.0), ({"scale": 2}, 0.0)])
+            # Per-year scores use the same formula on that year's target records.
+            self.assertEqual(result["results"][0]["by_year"], {"2001": 1.0, "2002": 1.0, "2003": 1.0})
+            self.assertEqual(result["results"][1]["by_year"], {"2001": 0.0, "2002": 0.0, "2003": 0.0})
             self.assertEqual(result["best_params"], {"scale": 1})
             self.assertEqual(result["best_index"], 0)
             self.assertEqual(result["best_score"], 1.0)
@@ -265,7 +268,7 @@ class ForecastingTests(unittest.TestCase):
             origins = (workspace / "origins.txt").read_text().splitlines()
             self.assertEqual((len(origins), origins[0], origins[-1]), (34, "2000-12", "2003-09"))
             selected = analysis.calculate_internal_validation_score(candidate, {"scale": 2})
-            self.assertEqual(selected["results"], [{"params": {"scale": 2}, "score": 0.0}])
+            self.assertEqual([(r["params"], r["score"]) for r in selected["results"]], [({"scale": 2}, 0.0)])
             self.assertEqual(selected["best_params"], {"scale": 2})
             self.assertEqual((workspace / "fits.txt").read_text(), "2\n1\n")
             os.chdir(previous)

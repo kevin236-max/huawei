@@ -40,8 +40,19 @@ class IntegrationTests(unittest.TestCase):
                     p=subprocess.Popen([sys.executable, '-u', '-c', r'''
 import json, sys
 from pathlib import Path
-for turn, line in enumerate(sys.stdin, 1):
+turn = 0
+for line in sys.stdin:
     prompt = json.loads(line)['message']
+    if prompt.startswith('上一条回复中的 JSON'):
+        # Retry of the truncated first plan, in the same conversation.
+        assert turn == 1 and '括号' in prompt
+        payload = {'tasks': [{'name': 'seasonal', 'instruction': 'Compare seasonal forecast and persistence.', 'files': []}]}
+        print(json.dumps({'type': 'message_end', 'message': {'role': 'user', 'content': prompt}}), flush=True)
+        print(json.dumps({'type': 'message_end', 'message': {'role': 'assistant', 'content': [
+            {'type': 'text', 'text': json.dumps(payload)}], 'stopReason': 'stop'}}), flush=True)
+        print(json.dumps({'type': 'agent_settled'}), flush=True)
+        continue
+    turn += 1
     if turn > 1:
         results, instruction = prompt.rsplit('\n\n', 1)
         batch = json.loads(results)['results']
@@ -50,14 +61,18 @@ for turn, line in enumerate(sys.stdin, 1):
         assert f'results/round{turn-1}/' in batch[0]['file']
     if turn == 4:
         assert '提交最终结果' in instruction
-        payload = {'file': 'results/round1/seasonal/seasonal_mean.py', 'best_params': {'season_weight': 1.0}}
+        reported = json.loads(Path('results/round1/seasonal/result.json').read_text())
+        payload = {'file': 'results/round1/seasonal/seasonal_mean.py', 'best_params': reported['best_params']}
     else:
         assert turn <= 3
         files = [] if turn == 1 else [f'results/round{turn-1}/seasonal/seasonal_mean.py']
         payload = {'tasks': [{'name': 'seasonal', 'instruction': 'Compare seasonal forecast and persistence.', 'files': files}]}
+    text = json.dumps(payload)
+    if turn == 1:
+        text = text[:-1]  # first plan loses its closing brace, as in a real run
     print(json.dumps({'type': 'message_end', 'message': {'role': 'user', 'content': prompt}}), flush=True)
     print(json.dumps({'type': 'message_end', 'message': {'role': 'assistant', 'content': [
-        {'type': 'text', 'text': json.dumps(payload)}], 'stopReason': 'stop'}}), flush=True)
+        {'type': 'text', 'text': text}], 'stopReason': 'stop'}}), flush=True)
     print(json.dumps({'type': 'agent_settled'}), flush=True)
 '''], cwd=stage/'workspace', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
                     main_processes.append(p)
@@ -71,7 +86,7 @@ for turn, line in enumerate(sys.stdin, 1):
                 p.wait()
                 for s in (p.stdin,p.stdout,p.stderr): s.close()
             def session(config,stage,public,cpus,prompt,deadline,role='subagent', *,
-                        soft_deadline=None,finish_prompt=None):
+                        soft_deadline=None,finish_prompt=None,check=None):
                 (stage/'prompt.txt').write_text(prompt)
                 self.assertEqual(role, 'subagent')
                 self.assertLess(soft_deadline, deadline)
@@ -101,24 +116,30 @@ for turn, line in enumerate(sys.stdin, 1):
                  patch('harness.pi.gateway.start_gateway',return_value=Server()),\
                  patch('harness.evaluate.start_server',server),patch('harness.evaluate.sandbox.start',start),\
                  patch('harness.evaluate.sandbox.stop',stop),patch('os.sched_getaffinity',return_value=set(range(36))):
-                result=execute(config)
+                run=root/'runs/20261107_120000/repeat_001'
+                result=execute(config,run)
             self.assertEqual(result['status'],'complete')
             self.assertEqual(len(active),3)
             self.assertEqual(len(set(active)),3)
             self.assertTrue(all(len(cpus)==12 for _,cpus,_ in controls))
             self.assertTrue(all(r['validation_score']!=-999 for r in result['results']))
-            run=next((root/'runs').iterdir())
+            self.assertGreater(result['duration'], 0)
+            self.assertEqual(json.loads((run/'result.json').read_text()), result)
             self.assertNotIn('private',(run/'config.json').read_text())
             self.assertTrue((run/result['file']).exists())
             self.assertIn('test_score',result)
+            self.assertEqual(result['selected_by'],'main')
+            self.assertTrue(all(r['name']=='seasonal' for r in result['results']))
             self.assertEqual(len(main_processes), 1)
             self.assertIsNotNone(main_processes[0].returncode)
             self.assertTrue(all(stream.closed for stream in (main_processes[0].stdin, main_processes[0].stdout, main_processes[0].stderr)))
             self.assertEqual(list((run/'main').rglob('trajectory.jsonl')), [run/'main/trajectory.jsonl'])
             trajectory=[json.loads(line) for line in (run/'main/trajectory.jsonl').read_text().splitlines()]
-            self.assertEqual(len([event for event in trajectory if event['message']['role']=='assistant']), 4)
+            self.assertEqual(len([event for event in trajectory if event['message']['role']=='assistant']), 5)
             prompts=[json.loads(line)['message'] for line in (run/'main/prompts.jsonl').read_text().splitlines()]
-            self.assertEqual(len(prompts), 4)
+            self.assertEqual(len(prompts), 5)
+            self.assertIn('（共 3 轮）', prompts[0])
+            self.assertIn('最后一批', prompts[3])
             self.assertIn('results/round3/seasonal/seasonal_mean.py', prompts[-1])
             self.assertIn('\n\n', prompts[-1])
             self.assertIn('提交最终结果', prompts[-1].rsplit('\n\n', 1)[1])

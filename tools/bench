@@ -9,7 +9,7 @@ parser.add_argument('action',choices=['evaluate'])
 parser.add_argument('--candidate',required=True)
 args=parser.parse_args()
 with socket.socket(socket.AF_UNIX) as connection:
-    connection.settimeout(490)
+    connection.settimeout(1200)
     connection.connect('/control/evaluation.sock')
     connection.sendall((json.dumps({'candidate':args.candidate})+'\n').encode())
     with connection.makefile('rb') as stream:

@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
-from harness.run import copy_references, recover, collect, choose_final, run_rounds, report_result
+from harness.run import copy_references, recover, collect, choose_final, run_rounds, report_result, last_progress
 
 class OrchestrationTests(unittest.TestCase):
     def test_three_worker_batches_then_final_decision_cannot_launch_fourth(self):
@@ -158,6 +158,8 @@ class OrchestrationTests(unittest.TestCase):
         copy.write_bytes(a.read_bytes())
         self.assertEqual(choose_final(self.root,{'file':'ridge.py','best_params':{'alpha':2}})['file'],str(a))
         self.assertEqual(choose_final(self.root,{'file':str(a),'best_params':{'alpha':99}})['file'],str(b))
+        self.assertEqual(choose_final(self.root,{'file':'ridge.py','best_params':{'alpha':2}})['selected_by'],'main')
+        self.assertEqual(choose_final(self.root,None)['selected_by'],'fallback')
     def test_worker_written_results_cannot_enter_host_selection(self):
         real=self.evaluated(score=.6)
         fake=self.worker/'workspace/evaluations/1'
@@ -195,3 +197,60 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(len(results),9)
 
 if __name__=='__main__': unittest.main()
+
+
+class ReportFallbackTests(unittest.TestCase):
+    """Handoffs keep host scores and the worker's own explanation when its report is imperfect."""
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.worker = Path(self.tmp.name) / 'workers/round1/ridge'
+        (self.worker / 'workspace/solution').mkdir(parents=True)
+    def tearDown(self):
+        self.tmp.cleanup()
+    def evaluated(self, score=.6, internal=.5, code='old = True', number=1, params=None):
+        folder = self.worker / 'evaluations' / str(number)
+        folder.mkdir(parents=True)
+        (folder / 'ridge.py').write_text(code)
+        (folder / 'result.json').write_text(json.dumps(dict(
+            file='ridge.py', score=score, best_params=params or {'alpha': 2}, internal_score=internal)))
+        return folder / 'ridge.py'
+    def trajectory(self, *texts):
+        with (self.worker / 'trajectory.jsonl').open('w') as stream:
+            for text in texts:
+                stream.write(json.dumps({'type': 'message_end', 'message': {
+                    'role': 'assistant', 'content': [{'type': 'text', 'text': text}]}}) + '\n')
+
+    def test_malformed_report_keeps_text_and_host_scores(self):
+        self.evaluated()
+        text = '{"file":"submissions/1/ridge.py","best_params":{"lr":0.05,"seed=0"},"summary":"跨站特征无增益"}'
+        report = report_result(self.worker, {'status': 'finished', 'text': text})
+        self.assertEqual(report['validation_score'], .6)
+        self.assertEqual(report['internal_score'], .5)
+        self.assertIn('跨站特征无增益', report['summary'])
+
+    def test_internal_score_comes_from_host_record(self):
+        saved = self.evaluated(internal=.42)
+        exported = self.worker / 'workspace/solution/ridge.py'
+        exported.write_bytes(saved.read_bytes())
+        report = report_result(self.worker, {'status': 'finished', 'text': json.dumps(
+            {'file': 'solution/ridge.py', 'best_params': {'alpha': 2}, 'internal_score': 0.99, 'summary': 's'})})
+        self.assertEqual(report['internal_score'], .42)
+        self.assertEqual(report['validation_score'], .6)
+
+    def test_mismatched_report_returns_best_evaluated_version(self):
+        best = self.evaluated(score=.7)
+        (self.worker / 'workspace/solution/ridge.py').write_text('edited after evaluation')
+        report = report_result(self.worker, {'status': 'finished', 'text': json.dumps(
+            {'file': 'solution/ridge.py', 'best_params': {'alpha': 2}, 'summary': '改了特征'})})
+        self.assertEqual(report['file'], str(best))
+        self.assertEqual(report['validation_score'], .7)
+        self.assertIn('改了特征', report['summary'])
+        self.assertIn('不一致', report['summary'])
+
+    def test_timeout_handoff_includes_last_progress(self):
+        self.trajectory('写好了特征', '第二次提交前遇到 KeyError: 2009-10，正在修复月份索引')
+        report = recover(self.worker, 'timeout', last_progress(self.worker))
+        self.assertIn('超时', report['summary'])
+        self.assertIn('KeyError: 2009-10', report['summary'])
+        report = report_result(self.worker, {'status': 'timeout', 'text': ''})
+        self.assertIn('正在修复月份索引', report['summary'])

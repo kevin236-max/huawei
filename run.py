@@ -23,7 +23,7 @@ def load_config(path):
     for key,lower,upper in [('rounds',1,3),('workers',1,3),('cpus_per_worker',12,12)]:
         if type(config[key]) is not int or not lower<=config[key]<=upper:
             raise ValueError(f'{key} 须在 {lower} 至 {upper} 之间')
-    config.setdefault('worker_finish_timeout',600)
+    config.setdefault('worker_finish_timeout',180)
     for key in ('worker_timeout','worker_finish_timeout','search_timeout','candidate_timeout'):
         if config[key]<=0: raise ValueError(f'{key} 须为正数')
     config['worker_timeout']=min(config['worker_timeout'],480)
@@ -60,7 +60,10 @@ def main():
     parser.add_argument('--config',default=str(ROOT/'config.yaml'))
     parser.add_argument('--task',help='Task directory, with benchmark.yaml/public/private')
     parser.add_argument('--candidate',type=Path)
+    parser.add_argument('--repeat',type=int,help='Number of independent searches in one batch (default: 1)')
     args=parser.parse_args()
+    if args.repeat is not None and (args.command!='run' or args.repeat<1):
+        parser.error('--repeat 须为正整数，且仅用于 run')
     config=load_config(args.config)
     if args.task: config['task']=str(Path(args.task).resolve())
     from harness.forecasting import load_task,task_context
@@ -81,9 +84,11 @@ def main():
     else:
         if not config['api'].get('base_url') or not config['api'].get('model'):
             raise ValueError('请在 .env 或 config.yaml 配置模型地址和名称')
-        from harness.run import execute
-        result=execute(config)
+        from harness.run import execute_batch
+        result=execute_batch(config,repeat=args.repeat if args.repeat is not None else 1)
     print(json.dumps(result,ensure_ascii=False,indent=2))
+    if args.command=='run':
+        return 0 if result['completed']==result['repeat'] else 1
     return 0 if result.get('status','complete')=='complete' else 1
 
 if __name__=='__main__':

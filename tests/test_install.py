@@ -81,7 +81,6 @@ class InstallTests(unittest.TestCase):
         self.source = self.project/'packages/pi'
         self.source.mkdir(parents=True)
         (self.source/'package.json').write_text('{}')
-        (self.project/'requirements.txt').write_text('numpy\n')
         shutil.copyfile(ROOT/'install.sh', self.project/'install.sh')
         self.bin = self.directory/'fake-bin'
         self.bin.mkdir()
@@ -176,7 +175,7 @@ class InstallTests(unittest.TestCase):
         self.assertFalse(any(call['tool']=='apt-get' for call in self.calls()))
         self.assertFalse(any(call['tool']=='npm' for call in self.calls()))
 
-    def test_proxy_reaches_downloads_pip_and_node_build(self):
+    def test_proxy_reaches_downloads_and_node_build(self):
         result = self.install(OLD_SYSTEM_NODE='1', HTTPS_PROXY='http://proxy.test:8080',
                               HTTP_PROXY='http://proxy.test:8080', NO_PROXY='localhost,127.0.0.1')
         self.assertEqual(result.returncode, 0, result.stdout+result.stderr)

@@ -7,6 +7,8 @@ import sys
 import numpy as np
 import pandas as pd
 
+INTERNAL_VALIDATION_MONTHS = 36
+
 
 def load_task(path, horizon=3):
     """Read an existing monthly task directory without executing task code."""
@@ -82,13 +84,13 @@ def score(predictions, truth):
 
 
 def public_settings(task):
-    return dict(horizon=task["horizon"], internal_validation_months=36,
+    return dict(horizon=task["horizon"], internal_validation_months=INTERNAL_VALIDATION_MONTHS,
                 first_origin=task["first_origin"])
 
 
 def task_context(task):
     splits, train = task["splits"], task["train"]
-    internal_start = str(pd.Period(train.month.iloc[-1], freq="M") - 35)
+    internal_start = str(pd.Period(train.month.iloc[-1], freq="M") - (INTERNAL_VALIDATION_MONTHS - 1))
     internal_cutoff = str(pd.Period(internal_start, freq="M") - 1)
     return "\n".join([
         task["description"],

@@ -12,14 +12,14 @@ case "${1:-}" in
         cat <<'HELP'
 Usage: bash install.sh [--install-system-deps]
 
-Installs Python requirements and builds packages/pi in .runtime/pi.
+Builds packages/pi in .runtime/pi using the existing Python environment.
 Uses an existing Node >=22.19 with environment proxy support, or downloads Node 24.
 The Pi build downloads npm dependencies and current model catalogs.
-Requires Linux and an existing Python environment with pip.
+Requires Linux and a preconfigured Python environment; Python packages are not installed or updated.
 Missing system tools are installed with apt-get (using sudo when needed).
 
 PI_RUNTIME_ROOT changes the runtime directory (default: PROJECT/.runtime).
-HUAWEI_PYTHON changes the Python interpreter used for requirements.
+HUAWEI_PYTHON changes the Python interpreter used for system dependency checks.
 PI_BWRAP selects an existing bubblewrap executable.
 HTTP_PROXY/HTTPS_PROXY/NO_PROXY (or lowercase) configure downloads and builds.
 Node environment proxy support is enabled automatically.
@@ -140,7 +140,6 @@ export npm_config_cache="$PI_RUNTIME_ROOT/cache/npm"
 export XDG_CACHE_HOME="$PI_RUNTIME_ROOT/cache"
 export PI_CODING_AGENT_DIR="$INSTALL_TEMP/pi-check"
 
-"$HUAWEI_PYTHON" -m pip install -r "$PROJECT_ROOT/requirements.txt"
 mkdir -- "$INSTALL_TEMP/pi"
 git -C "$PI_SOURCE" archive HEAD | tar -x -C "$INSTALL_TEMP/pi"
 (
