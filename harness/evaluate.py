@@ -10,7 +10,7 @@ import threading
 import time
 
 from harness import sandbox
-from harness.forecasting import INTERNAL_VALIDATION_MONTHS, windows, score
+from harness.forecasting import windows, score
 
 
 def read_candidate(source):
@@ -43,12 +43,11 @@ def split_data(task, split):
 
     ``internal`` mirrors analysis.calculate_internal_validation_score on the public table.
     """
+    splits = task['splits']
     if split == 'internal':
         data = task['train']
-        months = INTERNAL_VALIDATION_MONTHS
-        start, end = data.month.iloc[-months], data.month.iloc[-1]
-        return data.iloc[:-months], data, (start, end)
-    splits = task['splits']
+        start, end = splits['internal_validation_targets']
+        return data.loc[data.month < start], data, (start, end)
     fit_end = splits['train_observations' if split == 'validation' else 'final_fit_observations'][1]
     history = task['history']
     return history.loc[history.month <= fit_end], history, splits[split+'_targets']

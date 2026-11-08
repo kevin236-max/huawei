@@ -87,6 +87,7 @@ class ForecastingTests(unittest.TestCase):
                 horizons: [3, 6]
                 splits:
                   train_observations: ['1987-03', '1991-02']
+                  internal_validation_targets: ['1989-03', '1991-02']
                   validation_targets: ['1991-03', '1991-11']
                   final_fit_observations: ['1987-03', '1991-11']
                   test_targets: ['1991-12', '1992-08']
@@ -100,10 +101,23 @@ class ForecastingTests(unittest.TestCase):
             self.assertEqual(len(task["history"]), 66)
             self.assertEqual(task["splits"]["test_targets"], ["1991-12", "1992-08"])
             self.assertEqual(forecasting.public_settings(task), {
-                "horizon": 3, "internal_validation_months": 36, "first_origin": "1988-02"})
+                "horizon": 3, "internal_validation_targets": ["1989-03", "1991-02"], "first_origin": "1988-02"})
             context = forecasting.task_context(task)
-            for value in ("Four stations", "1991-02", "1991-03", "1992-08", "1988-02", "station_3"):
+            for value in ("Four stations", "1991-02", "1991-03", "1992-08", "1988-02", "station_3",
+                          "Internal fit cutoff: 1989-02; internal targets: 1989-03 to 1991-02"):
                 self.assertIn(value, context)
+
+            manifest = (root / "benchmark.yaml").read_text()
+            for bounds in (None, "['1987-03', '1991-02']", "['1989-03', '1991-03']",
+                           "['1991-02', '1991-02']", "['1988-04', '1991-02']", "['1989-13', '1991-02']"):
+                with self.subTest(internal=bounds):
+                    lines = [line for line in manifest.splitlines() if "internal_validation_targets" not in line]
+                    if bounds is not None:
+                        lines.insert(3, f"  internal_validation_targets: {bounds}")
+                    (root / "benchmark.yaml").write_text("\n".join(lines) + "\n")
+                    with self.assertRaises(ValueError):
+                        forecasting.load_task(root)
+            (root / "benchmark.yaml").write_text(manifest)
 
             (root / "public/description.md").write_text(
                 "> old access policy\n\n# Another basin\n\nTASK_ID=old-name\n\n"
@@ -230,7 +244,7 @@ class ForecastingTests(unittest.TestCase):
             data = observations(periods=48)
             data.to_csv(workspace / "input/train.csv", index=False, float_format="%.0f")
             (workspace / "input/task.json").write_text(json.dumps({
-                "horizon": 3, "internal_validation_months": 36, "first_origin": "2000-03"}))
+                "horizon": 3, "internal_validation_targets": ["2001-01", "2003-12"], "first_origin": "2000-03"}))
             candidate = workspace / "method.py"
             candidate.write_text(textwrap.dedent("""\
                 import numpy as np

@@ -18,7 +18,7 @@ bash install.sh
 cp .env.example .env
 ```
 
-- 编辑 `.env` 中的模型地址、名称和 API key。支持 OpenAI Chat Completions 兼容服务，key 仅由宿主持有。
+- 编辑 `.env`：用 `LLM_BACKEND` 选择后端（`openai` 或 `novita`），再填写对应前缀的 `<PREFIX>_BASE_URL`、`<PREFIX>_MODEL`、`<PREFIX>_API_KEY`、`<PREFIX>_REASONING_EFFORT`。`openai` 指 OpenAI Chat Completions 兼容服务（如本地 vLLM，未启用认证时 key 可为 `EMPTY`）；`novita` 使用 `https://api.novita.ai/openai/v1`，必须填写 API key。`config.yaml` 的 `api.backend` 可覆盖 `LLM_BACKEND`，进程环境变量覆盖 `.env` 同名变量。key 仅由宿主持有，不写入运行记录。
 - `PI_RUNTIME_ROOT` 可指定本机运行目录，安装与运行时保持一致；默认 `.runtime/`。共享项目建议指定机器本地目录，例如 `/var/lib/runtime/runoff-pi`。
 - `HUAWEI_PYTHON` 可指定系统依赖检查使用的 Python；同时修改 `config.yaml` 中的 `python`，使两者一致。
 - Pi 依赖在运行目录中构建，不在 `packages/pi` 写入 node_modules/dist。
@@ -58,7 +58,7 @@ python run.py evaluate --candidate examples/seasonal_mean.py
 ```
 
 - 默认任务为乌江 plus，H=3。任务配置直接填写数据目录，不需要注册适配器。
-- 读取 `benchmark.yaml` 的时间划分、`public/train.csv` 的字段、`private/observations.csv` 的完整历史，以及训练窗口中的首个允许起报月。
+- 读取 `benchmark.yaml` 的时间划分（含内部验证目标月份 `internal_validation_targets`）、`public/train.csv` 的字段、`private/observations.csv` 的完整历史，以及训练窗口中的首个允许起报月。
 - 仅公开训练数据进入 agent；候选沙箱逐月收到合法历史前缀，私有观测表与评分始终留在宿主。
 - 站点数量、顺序、年月范围、数据说明由任务生成。评分统一为各站等权的 `1-MAPE`，只计算完整预测窗口。
 - `doctor` 检查启动权限、CPU 数量并实际启动一个隔离探针；不支持隔离时直接报错。
@@ -94,7 +94,7 @@ def predict(state, history_data, target_months):
 - 文件按方法命名，例如 `seasonal_ridge.py`、`lag_lightgbm.py`、`ridge_tree_blend.py`。
 - 数据是 `month` 字符串列和各站 float64 径流列；预测为每个参数方案一个 `[H, 站点数]` 数组，有限且非负。
 - 每次评测拟合一次，随后逐月预测；最终测试只传入选中的一个参数字典，在扩展训练历史上重新拟合。
-- subagent 工作区中的只读 `analysis.py` 只提供 `calculate_internal_validation_score`，使用公开训练表最后 36 个月，返回每组参数的分数和逐年分数 `by_year`。
+- subagent 工作区中的只读 `analysis.py` 只提供 `calculate_internal_validation_score`，使用 `benchmark.yaml` 中 `internal_validation_targets` 声明的目标月份（`[YYYY-MM, YYYY-MM]`，须位于公开训练段内，按其起始月之前的数据拟合），返回每组参数的分数和逐年分数 `by_year`。该字段为必填，缺失时加载任务直接报错。
 - `bench evaluate --candidate solution/seasonal_ridge.py` 返回 `file/score/best_params/internal_score`（内部分数为宿主对 `best_params` 的公开内部验证）；代码副本位于只读 `submissions/`，源文件之后的修改不改变已有结果。
 - 每次提交执行前复制候选。公开内部检查可显示调试错误；私有验证错误只返回简短说明（文件路径问题、超时、预测形状或数值等宿主侧检查），详细日志留在宿主。agent 沙箱设置 `PYTHONSAFEPATH=1`，模块只经 `PYTHONPATH` 查找。
 - 候选正式执行禁用网络与外部程序执行，可使用同进程线程进行数值计算。线程默认值由 `native_threads` 设置；模型代码可以在其 12 核范围内自行安排计算。

@@ -6,6 +6,9 @@ splits:
   train_observations:
   - 1951-05
   - 2010-12
+  internal_validation_targets:
+  - 2008-01
+  - 2010-12
   validation_targets:
   - 2011-01
   - 2015-12

@@ -10,6 +10,7 @@ candidate_timeout: 300
 cpus_per_worker: 12
 native_threads: 1
 api:
+  backend: null
   base_url: null
   model: null
   reasoning_effort: null

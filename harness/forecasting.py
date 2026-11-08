@@ -7,8 +7,6 @@ import sys
 import numpy as np
 import pandas as pd
 
-INTERNAL_VALIDATION_MONTHS = 36
-
 
 def load_task(path, horizon=3):
     """Read an existing monthly task directory without executing task code."""
@@ -47,9 +45,29 @@ def load_task(path, horizon=3):
                 description = line.replace("public/train.csv", "公开训练表")
                 break
     first_origin = pd.read_csv(path / f"public/h{horizon}/train_windows.csv", nrows=1).origin_month.iloc[0]
+    splits["internal_validation_targets"] = internal_targets(splits, first_origin, horizon)
     return dict(path=path, train=train, history=history, stations=stations,
                 splits=splits, description=description,
                 horizon=horizon, first_origin=first_origin)
+
+
+def internal_targets(splits, first_origin, horizon):
+    """Validate the declared internal validation target months inside the public train span."""
+    bounds = splits.get("internal_validation_targets")
+    if not isinstance(bounds, list) or len(bounds) != 2:
+        raise ValueError("benchmark.yaml splits must declare internal_validation_targets: [YYYY-MM, YYYY-MM]")
+    try:
+        start, end = (pd.Period(str(month), freq="M") for month in bounds)
+    except ValueError as error:
+        raise ValueError(f"internal_validation_targets must use YYYY-MM months: {bounds}") from error
+    train_start, train_end = (pd.Period(month, freq="M") for month in splits["train_observations"])
+    if not train_start < start <= end <= train_end:
+        raise ValueError("internal_validation_targets must lie inside train_observations, after its first month")
+    if (end - start).n + 1 < horizon:
+        raise ValueError("internal_validation_targets must cover at least one complete forecast window")
+    if pd.Period(first_origin, freq="M") + horizon >= start:
+        raise ValueError("Internal fit rows before internal_validation_targets need one complete training window")
+    return [str(start), str(end)]
 
 
 def windows(data, start, end, horizon):
@@ -84,13 +102,13 @@ def score(predictions, truth):
 
 
 def public_settings(task):
-    return dict(horizon=task["horizon"], internal_validation_months=INTERNAL_VALIDATION_MONTHS,
+    return dict(horizon=task["horizon"], internal_validation_targets=task["splits"]["internal_validation_targets"],
                 first_origin=task["first_origin"])
 
 
 def task_context(task):
     splits, train = task["splits"], task["train"]
-    internal_start = str(pd.Period(train.month.iloc[-1], freq="M") - (INTERNAL_VALIDATION_MONTHS - 1))
+    internal_start, internal_end = splits["internal_validation_targets"]
     internal_cutoff = str(pd.Period(internal_start, freq="M") - 1)
     return "\n".join([
         task["description"],
@@ -99,7 +117,7 @@ def task_context(task):
         f"Validation targets: {' to '.join(splits['validation_targets'])}.",
         f"Final fit: {' to '.join(splits['final_fit_observations'])}.",
         f"Test targets: {' to '.join(splits['test_targets'])}.",
-        f"Internal fit cutoff: {internal_cutoff}; internal targets: {internal_start} to {train.month.iloc[-1]}.",
+        f"Internal fit cutoff: {internal_cutoff}; internal targets: {internal_start} to {internal_end}.",
         f"Horizon: {task['horizon']}; first training origin: {task['first_origin']}.",
         "CSV preview:", train.head(3).to_csv(index=False).strip(),
     ])

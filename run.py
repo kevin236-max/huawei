@@ -10,16 +10,29 @@ import yaml
 from dotenv import dotenv_values
 
 ROOT=Path(__file__).resolve().parent
+# Chat Completions backends selectable through LLM_BACKEND; each reads <PREFIX>_* from .env.
+BACKENDS=('openai','novita')
+
+
+def load_api(api, values):
+    """Resolve the selected backend; config.yaml values override the backend's .env entries."""
+    name=api.get('backend') or values.get('LLM_BACKEND') or 'openai'
+    if name not in BACKENDS:
+        raise ValueError(f'LLM_BACKEND 须为 {"、".join(BACKENDS)} 之一，当前为 {name}')
+    prefix=name.upper()
+    api['backend']=name
+    for key,suffix in [('base_url','BASE_URL'),('model','MODEL'),('reasoning_effort','REASONING_EFFORT')]:
+        api[key]=api.get(key) or values.get(f'{prefix}_{suffix}')
+    # A local vLLM without authentication accepts the EMPTY placeholder; hosted backends need a key.
+    api['api_key']=values.get(f'{prefix}_API_KEY') or ('EMPTY' if name=='openai' else None)
+    return api
 
 
 def load_config(path):
     config=yaml.safe_load(Path(path).read_text())
     config['task']=str((ROOT/config['task']).resolve())
     values={**dotenv_values(ROOT/'.env'),**os.environ}
-    api=config['api']
-    for key,variable in [('base_url','OPENAI_BASE_URL'),('model','OPENAI_MODEL'),('reasoning_effort','OPENAI_REASONING_EFFORT')]:
-        api[key]=api.get(key) or values.get(variable)
-    api['api_key']=values.get('OPENAI_API_KEY','EMPTY')
+    load_api(config['api'],values)
     for key,lower,upper in [('rounds',1,3),('workers',1,3),('cpus_per_worker',12,12)]:
         if type(config[key]) is not int or not lower<=config[key]<=upper:
             raise ValueError(f'{key} 须在 {lower} 至 {upper} 之间')
@@ -82,8 +95,12 @@ def main():
             ROOT/'runs'/('evaluate_'+datetime.now().strftime('%Y%m%d_%H%M%S_%f')),
             sorted(os.sched_getaffinity(0))[:12],time.monotonic()+config['candidate_timeout'])
     else:
-        if not config['api'].get('base_url') or not config['api'].get('model'):
-            raise ValueError('请在 .env 或 config.yaml 配置模型地址和名称')
+        api=config['api']
+        prefix=api['backend'].upper()
+        if not api.get('base_url') or not api.get('model'):
+            raise ValueError(f'请在 .env 配置 {prefix}_BASE_URL 和 {prefix}_MODEL（当前 LLM_BACKEND={api["backend"]}）')
+        if not api.get('api_key'):
+            raise ValueError(f'请在 .env 配置 {prefix}_API_KEY（当前 LLM_BACKEND={api["backend"]}）')
         from harness.run import execute_batch
         result=execute_batch(config,repeat=args.repeat if args.repeat is not None else 1)
     print(json.dumps(result,ensure_ascii=False,indent=2))
