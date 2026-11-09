@@ -1,0 +1,10 @@
+station_id,station_name,region,cwc_river,lat,lon,area_km2,unit,unit_status,source_id,source_record,minimum_valid_daily_fraction,new_imputation,original_contiguous_start
+12025,Handia,Narmada,Narmada,22.491700000000002,76.993600000000001,54027,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+12035,Mandleshwar,Narmada,Narmada,22.168299999999999,75.660799999999981,72809,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+12046,Sandia,Narmada,Narmada,22.915800000000001,78.347499999999982,33953,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+5002,Biligundulu,Cauvery,Cauvery,12.1822,77.7239,36682,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+5022,Thengumarahada,Cauvery,Cauvery/Bhavani/Moyar,11.572800000000001,76.919200000000004,1370,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+6001,Adityapur,Subernarekha,Subarnarekha/Kharkai,22.791399999999999,86.173599999999979,6309,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+7007,Gomlai,Brahmani-Baitarani,Brahmani,21.837800000000001,84.942499999999981,21950,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+7008,Jaraikela,Brahmani-Baitarani,Brahmani/Koel,22.3217,85.10469999999998,9160,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+8006,Basantpur,Mahanadi,Mahanadi,21.726700000000001,82.7881,57780,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01

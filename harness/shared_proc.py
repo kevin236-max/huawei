@@ -17,6 +17,28 @@ import time
 
 ROOT = Path(__file__).resolve().parent.parent
 WRITABLE = ('workspace', 'home', 'tmp')
+# Live sandbox identities, so an interrupt can kill every sandbox at once (see kill_all).
+_LIVE = set()
+_LIVE_LOCK = threading.RLock()  # reentrant: the interrupt handler runs on the main thread
+_INTERRUPTED = threading.Event()
+
+
+def kill_all():
+    """On interrupt: refuse new sandboxes and SIGKILL every process of every live sandbox UID.
+
+    Sandboxes run in their own sessions under their own UIDs, so killing the launcher alone
+    would leave them running. Owners still call Identity.stop afterwards for the normal cleanup.
+    """
+    _INTERRUPTED.set()
+    with _LIVE_LOCK:
+        uids = [identity.uid for identity in _LIVE]
+    for uid in uids:
+        for pid in processes(uid):
+            with contextlib.suppress(ProcessLookupError, FileNotFoundError, StopIteration):
+                lines = Path(f'/proc/{pid}/status').read_text().splitlines()
+                ids = next(line for line in lines if line.startswith('Uid:')).split()[1:]
+                if ids == [str(uid)] * 4:
+                    os.kill(pid, signal.SIGKILL)
 
 
 def require_root():
@@ -132,8 +154,14 @@ class Identity:
                             os.chmod(entry, (stat.S_IMODE(info.st_mode) & 0o777) | 0o600, dir_fd=fd)
             self.reservation.unlink(missing_ok=True)
             self.stopped = True
+            with _LIVE_LOCK:
+                _LIVE.discard(self)
 
     def launch(self, argv, control, *, deadline=None, **kwargs):
+        if _INTERRUPTED.is_set():
+            raise RuntimeError('运行已中断，不再启动新的沙箱')
+        with _LIVE_LOCK:
+            _LIVE.add(self)
         fds = []
         process = None
         try:
@@ -185,6 +213,9 @@ class Identity:
             Path(f'/proc/{pid}/uid_map').write_text(f'0 0 1\n1000 {self.uid} 1\n')
             Path(f'/proc/{pid}/setgroups').write_text('deny\n')
             Path(f'/proc/{pid}/gid_map').write_text(f'0 0 1\n1000 {self.uid} 1\n')
+            if _INTERRUPTED.is_set():
+                # An interrupt arrived while this sandbox was starting; kill_all may have missed it.
+                raise RuntimeError('运行已中断，不再启动新的沙箱')
             return process
         except BaseException:
             self.stop(process)

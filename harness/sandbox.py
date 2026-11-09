@@ -65,7 +65,7 @@ def start(config, stage, public, cpus, mode, command, control=None, *, deadline=
              '--ro-bind' if mode == 'main' else '--bind', str(stage / 'workspace'), '/workspace',
              '--ro-bind', str(public), '/workspace/input',
              '--bind', str(stage / 'home'), '/home/agent', '--bind', str(stage / 'tmp'), '/tmp']
-    threads = str(max(1, min(config.get('native_threads', 1), len(cpus))))
+    threads = str(max(1, min(config['native_threads'], len(cpus))))
     env = {'HOME':'/home/agent', 'TMPDIR':'/tmp', 'XDG_CACHE_HOME':'/tmp/cache',
            'MPLCONFIGDIR':'/tmp/matplotlib', 'LANG':'C.UTF-8', 'TZ':'UTC',
            'PATH':str(Path(python).parent)+':/usr/bin:/bin', 'PYTHONPATH':'/opt:/workspace',

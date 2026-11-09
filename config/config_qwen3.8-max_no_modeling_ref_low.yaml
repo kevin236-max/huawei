@@ -1,0 +1,32 @@
+task: data/wujiang
+horizon: 3
+python: /kling_test/gen4/tangjiafu/miniconda3/envs/huawei/bin/python
+rounds: 3
+workers: 3
+# Same as config_qwen3.8-max.yaml except prompts.main, which drops the 建模参考 section.
+worker_timeout: 1200
+worker_finish_timeout: 360
+search_timeout: 6000
+candidate_timeout: 300
+# Each subagent is pinned to this many CPUs; one search uses workers * cpus_per_worker.
+cpus_per_worker: 1
+native_threads: 1
+api:
+  backend: novita
+  base_url: null
+  model: null
+  reasoning_effort: low
+  max_tokens: 32768
+  context_window: 262144
+  api_timeout: 300
+prompts:
+  main: prompts/main_no_modeling_ref.md
+  subagent: prompts/subagent.md
+  subagent_finish: prompts/subagent_finish.md
+# Defaults for scripts/run_parallel.sh; command-line options override them.
+batch:
+  tasks: [wujiang, camels_aus, camels_ind, camels_us]
+  repeat: 5
+  parallel: 50
+  task_stagger: 2
+  job_stagger: 0

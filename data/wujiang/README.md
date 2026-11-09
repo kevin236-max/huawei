@@ -13,6 +13,6 @@
 验证目标月份为 2011-01 至 2015-12，测试目标月份为 2016-01 至 2023-04。
 内部验证目标月份为 2008-01 至 2010-12（`benchmark.yaml` 的 `internal_validation_targets`），
 位于公开训练段内，按 2007-12 及以前的数据拟合。
-默认预测长度为 3 个月，可在项目 `config.yaml` 中修改 `horizon`。
+默认预测长度为 3 个月，可在 `config/` 下配置文件中修改 `horizon`。
 
 在项目根目录运行 `bash scripts/run_wujiang.sh verify-data` 可校验数据。

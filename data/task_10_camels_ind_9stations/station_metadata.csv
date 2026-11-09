@@ -1,0 +1,10 @@
+station_id,station_name,region,cwc_river,lat,lon,area_km2,unit,unit_status,source_id,source_record,minimum_valid_daily_fraction,new_imputation,original_contiguous_start
+10008,Khanpur,Mahi,Mahi,22.534700000000001,73.140799999999999,32510,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+12026,Hoshangabad,Narmada,Narmada,22.7561,77.732799999999983,44548,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+12046,Sandia,Narmada,Narmada,22.915800000000001,78.347499999999982,33953,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+15003,Ambarampalayam,WFRS,Bharathapuzha/Kannadipuzha/Aliyar,10.6303,76.946100000000001,950,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+5002,Biligundulu,Cauvery,Cauvery,12.1822,77.7239,36682,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+6001,Adityapur,Subernarekha,Subarnarekha/Kharkai,22.791399999999999,86.173599999999979,6309,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+7007,Gomlai,Brahmani-Baitarani,Brahmani,21.837800000000001,84.942499999999981,21950,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+8003,Bamnidhi,Mahanadi,Mahanadi/Hasdeo,21.898599999999998,82.711699999999979,9730,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01
+8006,Basantpur,Mahanadi,Mahanadi,21.726700000000001,82.7881,57780,m3/s,source_declared,CAMELS_IND,14999580,0.94999999999999996,False,1980-01

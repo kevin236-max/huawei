@@ -1,0 +1,32 @@
+task: data/wujiang
+horizon: 3
+python: /kling_test/gen4/tangjiafu/miniconda3/envs/huawei/bin/python
+rounds: 3
+workers: 3
+worker_timeout: 480
+worker_finish_timeout: 180
+search_timeout: 3600
+candidate_timeout: 300
+# Each subagent is pinned to this many CPUs; one search uses workers * cpus_per_worker.
+cpus_per_worker: 4
+native_threads: 1
+api:
+  backend: openai
+  base_url: null
+  model: null
+  reasoning_effort: medium
+  max_tokens: 16384
+  context_window: 262144
+  api_timeout: 300
+# Prompt files, relative to the project root.
+prompts:
+  main: prompts/main.md
+  subagent: prompts/subagent.md
+  subagent_finish: prompts/subagent_finish.md
+# Defaults for scripts/run_parallel.sh; command-line options override them.
+batch:
+  tasks: [wujiang, camels_aus, camels_ind, camels_us]
+  repeat: 5
+  parallel: 20
+  task_stagger: 2
+  job_stagger: 0

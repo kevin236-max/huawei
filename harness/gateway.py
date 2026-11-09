@@ -96,7 +96,7 @@ def start_gateway(path, config, deadline):
             if remaining <= 0 or self.server.stopped.is_set():
                 self.send_error(403, 'Session ended')
                 return
-            timeout = min(remaining, config.get('api_timeout', 120))
+            timeout = min(remaining, config['api_timeout'])
             if url.scheme == 'https':
                 upstream = http.client.HTTPSConnection(host, port, timeout=timeout,
                             context=ssl.create_default_context(cafile=config.get('ca_file')))

@@ -111,7 +111,9 @@ for line in sys.stdin:
                 return {'text':json.dumps(payload),'status':'finished'}
             config=dict(task=str(DATA),horizon=3,workers=3,rounds=3,cpus_per_worker=12,
                         worker_timeout=.05,worker_finish_timeout=30,search_timeout=120,candidate_timeout=30,
-                        python=sys.executable,api={'api_key':'private','model':'test','max_tokens':10})
+                        python=sys.executable,native_threads=1,
+                        prompts={'main':'prompts/main.md','subagent':'prompts/subagent.md','subagent_finish':'prompts/subagent_finish.md'},
+                        api={'api_key':'private','model':'test','max_tokens':10,'context_window':1000,'api_timeout':30})
             with patch('harness.run.__file__',str(root/'harness/run.py')),patch('harness.pi.run_session',session),\
                  patch('harness.pi.gateway.start_gateway',return_value=Server()),\
                  patch('harness.evaluate.start_server',server),patch('harness.evaluate.sandbox.start',start),\

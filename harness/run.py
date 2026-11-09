@@ -285,9 +285,11 @@ def _execute(config, run):
     print(f'Run: {run}',flush=True)
     deadline=time.monotonic()+config['search_timeout']
     context=task_context(task)
-    main_template=Template((root/'prompts/main.md').read_text())
-    worker_template=Template((root/'prompts/subagent.md').read_text())
-    finish_prompt=(root/'prompts/subagent_finish.md').read_text()
+    # Prompt files come from the config (paths relative to the project); see run.py load_config.
+    prompts=config['prompts']
+    main_template=Template((root/prompts['main']).read_text())
+    worker_template=Template((root/prompts['subagent']).read_text())
+    finish_prompt=(root/prompts['subagent_finish']).read_text()
     delivered=0
     main_session=PiSession(config,run/'main',public,available[:config['cpus_per_worker']],deadline,role='main')
 
@@ -356,7 +358,7 @@ def _execute(config, run):
         workspace=stage/'workspace'
         (workspace/'solution').mkdir(parents=True)
         soft_deadline=min(global_deadline,time.monotonic()+config['worker_timeout'])
-        worker_deadline=min(global_deadline,soft_deadline+config.get('worker_finish_timeout',180))
+        worker_deadline=min(global_deadline,soft_deadline+config['worker_finish_timeout'])
         cpus=available[slot*config['cpus_per_worker']:(slot+1)*config['cpus_per_worker']]
         server=None
         setup_error=None

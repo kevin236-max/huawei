@@ -66,7 +66,7 @@ def model_config(api):
         'baseUrl':'http://127.0.0.1:18080/v1', 'api':'openai-completions', 'apiKey':'sandbox',
         'models':[{'id':model, 'name':model, 'input':['text'],
                    'reasoning':bool(api.get('reasoning_effort') and api['reasoning_effort'] != 'off'),
-                   'contextWindow':api.get('context_window', 128000), 'maxTokens':api['max_tokens'],
+                   'contextWindow':api['context_window'], 'maxTokens':api['max_tokens'],
                    'thinkingLevelMap':{key:key for key in ('minimal','low','medium','high','xhigh','max')},
                    'compat':{'supportsStore':False, 'supportsDeveloperRole':False,
                              'maxTokensField':'max_completion_tokens' if 'gpt-' in model.lower() else 'max_tokens',

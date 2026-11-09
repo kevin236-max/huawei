@@ -32,7 +32,8 @@ class RuntimeTests(unittest.TestCase):
     def test_persistent_main_keeps_process_memory_and_one_trajectory(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary) / 'main'
-            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            config = {'python': sys.executable, 'native_threads': 1,
+                      'api': {'model': 'test', 'max_tokens': 10, 'context_window': 1000, 'api_timeout': 30}}
             children = []
             stopped = []
             class Gateway:
@@ -84,7 +85,8 @@ for line in sys.stdin:
     def test_persistent_main_closes_on_exception_between_turns(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary) / 'main'
-            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            config = {'python': sys.executable, 'native_threads': 1,
+                      'api': {'model': 'test', 'max_tokens': 10, 'context_window': 1000, 'api_timeout': 30}}
             child = subprocess.Popen([sys.executable, '-u', '-c',
                 'import sys,json,time;sys.stdin.readline();print(json.dumps({"type":"agent_settled"}),flush=True);time.sleep(10)'],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
@@ -126,7 +128,8 @@ for line in sys.stdin:
     def test_settled_turn_without_answer_gets_one_continuation(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary) / 'worker'
-            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            config = {'python': sys.executable, 'native_threads': 1,
+                      'api': {'model': 'test', 'max_tokens': 10, 'context_window': 1000, 'api_timeout': 30}}
             child = subprocess.Popen([sys.executable, '-u', '-c', '''
 import json, sys
 for turn, line in enumerate(sys.stdin, 1):
@@ -153,7 +156,8 @@ for turn, line in enumerate(sys.stdin, 1):
     def test_unparsed_report_is_resent_once_in_same_session(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary) / 'worker'
-            config = {'python': sys.executable, 'api': {'model': 'test', 'max_tokens': 10}}
+            config = {'python': sys.executable, 'native_threads': 1,
+                      'api': {'model': 'test', 'max_tokens': 10, 'context_window': 1000, 'api_timeout': 30}}
             child = subprocess.Popen([sys.executable, '-u', '-c', '''
 import json, sys
 for turn, line in enumerate(sys.stdin, 1):
@@ -329,7 +333,7 @@ time.sleep(10)
             dist.mkdir(parents=True)
             (pi_root / 'private.env').write_text('secret')
             config = {'python':sys.executable, 'bwrap':'/bwrap', 'node':sys.executable,
-                      'pi_root':str(pi_root)}
+                      'pi_root':str(pi_root), 'native_threads':1}
             fake_identity = unittest.mock.Mock()
             def check_mount_points(arguments, *args, **kwargs):
                 # bwrap cannot create a nested mount point inside a read-only bind.
@@ -404,7 +408,8 @@ time.sleep(10)
             stage = Path(temporary) / 'stage'
             public = Path(temporary) / 'public'
             public.mkdir()
-            config = {'python':sys.executable, 'api':{'model':'test', 'max_tokens':10}}
+            config = {'python':sys.executable, 'native_threads':1,
+                      'api':{'model':'test', 'max_tokens':10, 'context_window':1000, 'api_timeout':30}}
             process = subprocess.Popen([sys.executable, '-u', '-c', 'import time;time.sleep(20)'],
                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
             stopped = []
@@ -432,7 +437,8 @@ time.sleep(10)
     def test_session_startup_receives_shared_deadline(self):
         with tempfile.TemporaryDirectory() as temporary:
             stage = Path(temporary) / 'stage'
-            config = {'python':sys.executable, 'api':{'model':'test', 'max_tokens':10}}
+            config = {'python':sys.executable, 'native_threads':1,
+                      'api':{'model':'test', 'max_tokens':10, 'context_window':1000, 'api_timeout':30}}
             deadline = time.monotonic() + .1
             class FakeGateway:
                 def stop(self):
@@ -449,7 +455,8 @@ time.sleep(10)
             public.mkdir()
             config = {'python':sys.executable, 'node':'/usr/bin/node', 'pi_root':'/pi', 'bwrap':'/bwrap',
                       'api':{'model':'test', 'api_key':'host-secret', 'base_url':'http://example.invalid/v1',
-                             'max_tokens':10, 'reasoning_effort':'high'}}
+                             'max_tokens':10, 'reasoning_effort':'high', 'context_window':1000, 'api_timeout':30},
+                      'native_threads':1}
             process = subprocess.Popen([sys.executable, '-u', '-c',
                 'import sys,json,time;sys.stdin.readline();print(json.dumps({"type":"agent_settled"}),flush=True);time.sleep(10)'],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
@@ -523,7 +530,7 @@ class GatewayWithoutSocketsTests(unittest.TestCase):
              patch.object(gateway.http.client, 'HTTPConnection', Upstream), \
              patch.object(gateway, 'getproxies_environment', return_value={}):
             config = {'base_url':'http://local.invalid/v1', 'model':'fixed', 'api_key':'host-secret',
-                      'reasoning_effort':'high', 'max_tokens':20}
+                      'reasoning_effort':'high', 'max_tokens':20, 'api_timeout':30}
             server = gateway.start_gateway(Path(temporary)/'api.sock', config, time.monotonic()+2)
             try:
                 def request(body):
@@ -612,7 +619,7 @@ class GatewayTests(unittest.TestCase):
             directory = Path(temporary) / ('long_method_' * 12) / 'control'
             directory.mkdir(parents=True)
             path = directory / 'api.sock'
-            server = gateway.start_gateway(path, {'base_url':'http://127.0.0.1:1/v1','model':'m','max_tokens':20}, time.monotonic()-1)
+            server = gateway.start_gateway(path, {'base_url':'http://127.0.0.1:1/v1','model':'m','max_tokens':20,'api_timeout':30}, time.monotonic()-1)
             try:
                 self.assertTrue(path.exists())
                 fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
@@ -629,7 +636,7 @@ class GatewayTests(unittest.TestCase):
     def test_gateway_refuses_expired_deadline(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'api.sock'
-            server = gateway.start_gateway(path, {'base_url':'http://127.0.0.1:1/v1','model':'m','max_tokens':20}, time.monotonic()-1)
+            server = gateway.start_gateway(path, {'base_url':'http://127.0.0.1:1/v1','model':'m','max_tokens':20,'api_timeout':30}, time.monotonic()-1)
             try:
                 connection = UnixHTTPConnection(path)
                 connection.request('POST','/v1/chat/completions', json.dumps({'model':'m', 'messages':[]}))

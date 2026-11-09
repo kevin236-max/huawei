@@ -1,0 +1,63 @@
+{
+  "runs": [
+    "/kling_test/gen4/tangjiafu/huawei/runs/task10_20261109_030319"
+  ],
+  "num_trajectory_files": 500,
+  "num_samples": 499,
+  "by_role": {
+    "main": 50,
+    "worker": 449
+  },
+  "by_task": {
+    "task_01_camels_aus_9stations": 50,
+    "task_02_camels_aus_9stations": 50,
+    "task_03_camels_ind_9stations": 50,
+    "task_04_camels_ind_9stations": 50,
+    "task_05_camels_ind_9stations": 50,
+    "task_06_camels_ind_9stations": 50,
+    "task_07_camels_ind_9stations": 50,
+    "task_08_camels_ind_9stations": 49,
+    "task_09_camels_ind_9stations": 50,
+    "task_10_camels_ind_9stations": 50
+  },
+  "num_text_tokens": {
+    "min": 10722,
+    "median": 45790,
+    "p90": 90616,
+    "max": 125364,
+    "sum": 25368702
+  },
+  "answer_tokens": {
+    "min": 3459,
+    "median": 23398,
+    "p90": 46840,
+    "max": 70194,
+    "sum": 12862455
+  },
+  "answer_token_share": 0.507,
+  "samples_over_128000": 0,
+  "assistant_turns": {
+    "min": 5,
+    "median": 21,
+    "p90": 37,
+    "max": 53,
+    "sum": 10814
+  },
+  "reasoning_effort": {
+    "medium": 499
+  },
+  "conversion_notes": {
+    "dropped_trailing_non_assistant": 26,
+    "synthetic_tool_result": 7,
+    "dropped_error_assistant": 1,
+    "dropped_empty_assistant": 1
+  },
+  "tokenizer_for_counts": "/kling_test/gen4/tangjiafu/huawei/torchtitan/tjf/model_assets/Qwen3.8-27B",
+  "chat_template_from": "/kling_test/gen4/tangjiafu/model_list/Qwen3.8-27B",
+  "skipped": [
+    {
+      "path": "task10_20261109_030319/task_08_camels_ind_9stations/repeat_004/workers/round1/pooled_ridge_loganomaly/trajectory.jsonl",
+      "reason": "no usable assistant turn ({'dropped_error_assistant': 1, 'dropped_trailing_non_assistant': 2})"
+    }
+  ]
+}
